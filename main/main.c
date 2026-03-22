@@ -148,10 +148,10 @@ static const char *html_page =
     "body:JSON.stringify({message:t})});"
     "var d=await r.json();"
     "if(d.status==='processing'){"
-    // Step 2: Poll for result every 1.5 seconds
+    // Step 2: Poll for result every 1.5 seconds (with cache-bust)
     "for(var i=0;i<30;i++){"
     "await new Promise(r=>setTimeout(r,1500));"
-    "var p=await fetch('/reply');var pr=await p.json();"
+    "var p=await fetch('/reply?t='+Date.now());var pr=await p.json();"
     "if(pr.status==='done'){"
     "c.lastElementChild.className='msg dog';"
     "c.lastElementChild.innerHTML='🐕 '+pr.reply;"
@@ -449,7 +449,7 @@ static esp_err_t chat_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "User: %s", message->valuestring);
     log_debug("Chat: user='%s'", message->valuestring);
 
-    // If already processing, reject
+    // If already processing or done (not yet consumed), reject
     if (chat_state == CHAT_PROCESSING) {
         cJSON_Delete(body);
         httpd_resp_set_type(req, "application/json");
@@ -463,6 +463,7 @@ static esp_err_t chat_handler(httpd_req_t *req)
     cJSON_Delete(body);
 
     chat_state = CHAT_PROCESSING;
+    log_debug("Chat: state -> PROCESSING");
 
     // Return immediately!
     httpd_resp_set_type(req, "application/json");
@@ -470,9 +471,12 @@ static esp_err_t chat_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// GET /reply — poll for AI response
+// GET /reply — poll for AI response (result stays until new /chat request)
 static esp_err_t reply_handler(httpd_req_t *req)
 {
+    // Prevent caching — critical for polling
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate");
+    httpd_resp_set_hdr(req, "Pragma", "no-cache");
     httpd_resp_set_type(req, "application/json");
 
     if (chat_state == CHAT_DONE) {
@@ -484,7 +488,8 @@ static esp_err_t reply_handler(httpd_req_t *req)
         httpd_resp_send(req, resp_str, strlen(resp_str));
         free(resp_str);
         cJSON_Delete(resp);
-        chat_state = CHAT_IDLE;
+        // DON'T clear state here! Keep result available for re-reads.
+        // State is cleared when next POST /chat comes in.
     } else if (chat_state == CHAT_PROCESSING) {
         httpd_resp_sendstr(req, "{\"status\":\"processing\"}");
     } else {
@@ -538,6 +543,11 @@ static esp_err_t cmd_handler(httpd_req_t *req)
         if (httpd_query_key_value(qstr, "b", val, sizeof(val)) == ESP_OK) {
             uint8_t byte = (uint8_t)strtol(val, NULL, 16);
             send_dog_action(byte);
+            // Sync tail_wag_on if 0x40 sent via /cmd
+            if (byte == 0x40) {
+                tail_wag_on = !tail_wag_on;
+                log_debug("CMD: 0x40 wag %s", tail_wag_on ? "ON" : "OFF");
+            }
             log_debug("CMD: sent 0x%02X", byte);
             char resp[64];
             snprintf(resp, sizeof(resp), "Sent 0x%02X\n", byte);
@@ -833,8 +843,8 @@ void app_main(void)
     // Sit on startup
     send_dog_action(0x30);
 
-    // Idle behaviors disabled for now (testing stop behavior)
-    // xTaskCreate(idle_behavior_task, "idle_dog", 4096, NULL, 4, NULL);
+    // Start idle behaviors (0x29 stop should work per STM32 source analysis)
+    xTaskCreate(idle_behavior_task, "idle_dog", 4096, NULL, 4, NULL);
 
     ESP_LOGI(TAG, "AI Dog ready!");
     log_debug("Ready! Endpoints: / /chat /reply /test /log /action");
