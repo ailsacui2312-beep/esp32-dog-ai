@@ -26,5 +26,5 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 # LWIP
 CONFIG_LWIP_MAX_SOCKETS=10
 
-# Console output via USB-Serial/JTAG
-CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+# Console output via UART (so we can read from flash port)
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
