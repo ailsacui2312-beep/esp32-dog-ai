@@ -1,0 +1,10 @@
+#pragma once
+
+// ====== WiFi 配置 ======
+#define WIFI_SSID       "your_wifi_ssid"
+#define WIFI_PASS       "your_wifi_password"
+
+// ====== DeepSeek API 配置 ======
+#define DEEPSEEK_API_KEY    "sk-your-deepseek-api-key"
+#define DEEPSEEK_API_URL    "https://api.deepseek.com/chat/completions"
+#define DEEPSEEK_MODEL      "deepseek-chat"

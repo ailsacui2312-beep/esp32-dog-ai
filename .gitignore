@@ -1,0 +1,6 @@
+build/
+sdkconfig
+sdkconfig.old
+*.pyc
+__pycache__/
+main/config.h
